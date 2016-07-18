@@ -633,6 +633,27 @@ class Budget extends CommonDropdown{
 
       }
 
+// ************************************************************************************************
+      // If orders plugin is installed, get all elements ordered in this order.
+      if (TableExists('glpi_plugin_order_orders_items')) {
+        $id = $_GET['id']; // Budget's id
+        $budget_value = $DB->query("
+            SELECT
+              SUM(ooi.`price_ati`) AS ORDERED
+            FROM
+              glpi_plugin_order_orders_items ooi,
+              glpi_plugin_order_orders oo,
+              glpi_budgets b
+            WHERE
+              ooi.`plugin_order_orders_id` = oo.`id`
+              AND
+              oo.`budgets_id` = $id
+        ");
+        $res = $budget_value->fetch_assoc();
+        $total += $res['ORDERED'];
+      }
+// ************************************************************************************************
+
       $budget = new self();
       $budget->getFromDB($budgets_id);
 
