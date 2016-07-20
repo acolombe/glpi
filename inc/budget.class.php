@@ -1,8 +1,9 @@
 <?php
 /*
+ * @version $Id$
  -------------------------------------------------------------------------
  GLPI - Gestionnaire Libre de Parc Informatique
- Copyright (C) 2015-2016 Teclib'.
+ Copyright (C) 2015 Teclib'.
 
  http://glpi-project.org
 
@@ -35,7 +36,7 @@
 */
 
 if (!defined('GLPI_ROOT')) {
-   die("Sorry. You can't access this file directly");
+   die("Sorry. You can't access directly to this file");
 }
 
 /**
@@ -49,7 +50,7 @@ class Budget extends CommonDropdown{
    static $rightname           = 'budget';
    protected $usenotepad       = true;
 
-   public $can_be_translated = false;
+   var $can_be_translated = false;
 
 
    static function getTypeName($nb=0) {
@@ -113,7 +114,7 @@ class Budget extends CommonDropdown{
     **/
    function showForm($ID, $options=array()) {
 
-      $rowspan = 3;
+      $rowspan = 4;
       if ($ID > 0) {
          $rowspan++;
       }
@@ -127,21 +128,15 @@ class Budget extends CommonDropdown{
       Html::autocompletionTextField($this, "name");
       echo "</td>";
 
-      echo "<td>".__('Type')."</td>";
-      echo "<td>";
-      Dropdown::show('BudgetType', array('value' => $this->fields['budgettypes_id']));
-      echo "</td></tr>";
-
+      echo "<td rowspan='$rowspan' class='middle right'>".__('Comments')."</td>";
+      echo "<td class='center middle' rowspan='$rowspan'>".
+           "<textarea cols='45' rows='4' name='comment' >".$this->fields["comment"]."</textarea>".
+           "</td></tr>";
 
       echo "<tr class='tab_bg_1'>";
       echo "<td>"._x('price', 'Value')."</td>";
       echo "<td><input type='text' name='value' size='14'
-                 value='".Html::formatNumber($this->fields["value"], true)."'></td>";
-
-                 echo "<td rowspan='$rowspan' class='middle right'>".__('Comments')."</td>";
-                 echo "<td class='center middle' rowspan='$rowspan'>".
-                      "<textarea cols='45' rows='4' name='comment' >".$this->fields["comment"]."</textarea>".
-                      "</td></tr>";
+                 value='".Html::formatNumber($this->fields["value"], true)."'></td></tr>";
 
       echo "<tr class='tab_bg_1'>";
       echo "<td>".__('Start date')."</td>";
@@ -155,12 +150,14 @@ class Budget extends CommonDropdown{
       Html::showDateField("end_date", array('value' => $this->fields["end_date"]));
       echo "</td></tr>";
 
-      echo "<tr class='tab_bg_1'>";
-      echo "<td>".__('Location')."</td>";
-      echo "<td>";
-      Location::dropdown(array('value'  => $this->fields["locations_id"],
-                               'entity' => $this->fields["entities_id"]));
-      echo "</td></tr>";
+      if ($ID > 0) {
+         echo "<tr class='tab_bg_1'>";
+         echo "<td>".__('Last update')."</td>";
+         echo "<td>";
+         echo ($this->fields["date_mod"]? Html::convDateTime($this->fields["date_mod"])
+                                        : __('Never'));
+         echo "</td></tr>";
+      }
 
       $this->showFormButtons($options);
       return true;
@@ -211,31 +208,20 @@ class Budget extends CommonDropdown{
       $tab[19]['datatype']       = 'datetime';
       $tab[19]['massiveaction']  = false;
 
-      $tab[121]['table']          = $this->getTable();
-      $tab[121]['field']          = 'date_creation';
-      $tab[121]['name']           = __('Creation date');
-      $tab[121]['datatype']       = 'datetime';
-      $tab[121]['massiveaction']  = false;
-
-      $tab[4]['table']           = 'glpi_budgettypes';
-      $tab[4]['field']           = 'name';
-      $tab[4]['name']            = __('Type');
-      $tab[4]['datatype']        = 'dropdown';
-
       $tab[5]['table']           = $this->getTable();
       $tab[5]['field']           = 'begin_date';
       $tab[5]['name']            = __('Start date');
       $tab[5]['datatype']        = 'date';
 
-      $tab[6]['table']           = $this->getTable();
-      $tab[6]['field']           = 'end_date';
-      $tab[6]['name']            = __('End date');
-      $tab[6]['datatype']        = 'date';
+      $tab[3]['table']           = $this->getTable();
+      $tab[3]['field']           = 'end_date';
+      $tab[3]['name']            = __('End date');
+      $tab[3]['datatype']        = 'date';
 
-      $tab[7]['table']           = $this->getTable();
-      $tab[7]['field']           = 'value';
-      $tab[7]['name']            = _x('price', 'Value');
-      $tab[7]['datatype']        = 'decimal';
+      $tab[4]['table']           = $this->getTable();
+      $tab[4]['field']           = 'value';
+      $tab[4]['name']            = _x('price', 'Value');
+      $tab[4]['datatype']        = 'decimal';
 
       $tab[16]['table']          = $this->getTable();
       $tab[16]['field']          = 'comment';
@@ -252,10 +238,6 @@ class Budget extends CommonDropdown{
       $tab[86]['field']          = 'is_recursive';
       $tab[86]['name']           = __('Child entities');
       $tab[86]['datatype']       = 'bool';
-
-      // add objectlock search options
-      $tab += ObjectLock::getSearchOptionsToAdd( get_class($this) ) ;
-      $tab += Location::getSearchOptionsToAdd();
 
       $tab += Notepad::getSearchOptionsToAdd();
 
@@ -633,6 +615,26 @@ class Budget extends CommonDropdown{
 
       }
 
+      // If orders plugin is installed, get all elements ordered in this order.
+      if (TableExists('glpi_plugin_order_orders_items')) {
+        $id = $_GET['id']; // Budget's id
+        $budget_value = $DB->query("
+            SELECT
+              SUM(ooi.`price_ati`) AS ORDERED
+            FROM
+              glpi_plugin_order_orders_items ooi,
+              glpi_plugin_order_orders oo
+            WHERE
+              ooi.`plugin_order_orders_id` = oo.`id`
+              AND
+              oo.`plugin_order_orderstates_id` IN (1,2,3,4)
+              AND
+              oo.`budgets_id` = $id
+        ");
+        $res = $budget_value->fetch_assoc();
+        $total += $res['ORDERED'];
+      }
+
       $budget = new self();
       $budget->getFromDB($budgets_id);
 
@@ -697,3 +699,4 @@ class Budget extends CommonDropdown{
    }
 
 }
+?>
