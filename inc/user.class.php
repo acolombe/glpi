@@ -37,10 +37,8 @@
 // And Marco Gaiarin for ldap features
 
 if (!defined('GLPI_ROOT')) {
-   die("Sorry. You can't access this file directly");
+   die("Sorry. You can't access directly to this file");
 }
-
-use Sabre\VObject;
 
 class User extends CommonDBTM {
 
@@ -140,11 +138,6 @@ class User extends CommonDBTM {
          return true;
       }
       return false;
-   }
-
-
-   function canPurgeItem() {
-      return $this->canDeleteItem();
    }
 
 
@@ -713,9 +706,13 @@ class User extends CommonDBTM {
             }
          } else {
             //ldap jpegphoto synchronisation.
-            $picture = $this->syncLdapPhoto();
-            if (!empty($picture)) {
-               $input['picture'] = $picture;
+            if (isset($this->fields["authtype"])
+                && ($this->fields["authtype"] == Auth::LDAP
+                     || Auth::isAlternateAuth($this->fields['authtype']))
+                && $picture = $this->syncLdapPhoto()) {
+               if (!empty($picture)) {
+                  $input['picture'] = $picture;
+               }
             }
          }
       }
@@ -1079,8 +1076,6 @@ class User extends CommonDBTM {
 
       if (isset($this->fields["authtype"])
           && (($this->fields["authtype"] == Auth::LDAP)
-               || ($this->fields["authtype"] == Auth::NOT_YET_AUTHENTIFIED
-                   && !empty($this->fields["auths_id"]))
                || Auth::isAlternateAuth($this->fields['authtype']))) {
 
          if (isset($this->fields["id"]) && ($this->fields["id"] > 0)) {
@@ -1116,9 +1111,7 @@ class User extends CommonDBTM {
                $oldfile   = GLPI_PICTURE_DIR . "/".$this->fields["picture"];
 
                // update picture if not exist or changed
-               if (!file_exists($oldfile)
-                   || empty($this->fields["picture"])
-                   || sha1_file($oldfile) !== sha1($img)) {
+               if (!file_exists($oldfile) || (sha1_file($oldfile) !== sha1($img))) {
                   if (!is_dir(GLPI_PICTURE_DIR . "/$sub")) {
                      mkdir(GLPI_PICTURE_DIR . "/$sub");
                   }
@@ -1384,7 +1377,7 @@ class User extends CommonDBTM {
          $fields = Plugin::doHookFunction("retrieve_more_field_from_ldap", $fields);
 
          $fields  = array_filter($fields);
-         $f       = self::getLdapFieldNames($fields);
+         $f       = array_values($fields);
 
          $sr      = @ ldap_read($ldap_connection, $userdn, "objectClass=*", $f);
          $v       = AuthLDAP::get_entries_clean($ldap_connection, $sr);
@@ -1403,8 +1396,7 @@ class User extends CommonDBTM {
         $this->fields["_emails"]    = array();
 
          foreach ($fields as $k => $e) {
-            $val = self::getLdapFieldValue($e, $v);
-            if (empty($val)) {
+            if (empty($v[0][$e][0])) {
                switch ($k) {
                   case "language" :
                      // Not set value : managed but user class
@@ -1412,7 +1404,6 @@ class User extends CommonDBTM {
 
                   case "usertitles_id" :
                   case "usercategories_id" :
-                  case 'locations_id' :
                      $this->fields[$k] = 0;
                      break;
 
@@ -1439,30 +1430,28 @@ class User extends CommonDBTM {
                      break;
 
                   case "language" :
-                     $language = Config::getLanguage($val);
+                     $language = Config::getLanguage($v[0][$e][0]);
                      if ($language != '') {
                         $this->fields[$k] = $language;
                      }
                      break;
 
                   case "usertitles_id" :
-                     $this->fields[$k] = Dropdown::importExternal('UserTitle', $val);
+                     $this->fields[$k] = Dropdown::importExternal('UserTitle',
+                                                                  addslashes($v[0][$e][0]));
                      break;
 
-                  case 'locations_id' :
-                     // use import to build the location tree
-                     $this->fields[$k] = Dropdown::import('Location',
-                                                          ['completename' => $val,
-                                                           'entities_id'  => 0,
-                                                           'is_recursive' => 1]);
-                    break;
-
                   case "usercategories_id" :
-                     $this->fields[$k] = Dropdown::importExternal('UserCategory', $val);
+                     $this->fields[$k] = Dropdown::importExternal('UserCategory',
+                                                                  addslashes($v[0][$e][0]));
                      break;
 
                   default :
-                     $this->fields[$k] = $val;
+                     if (!empty($v[0][$e][0])) {
+                        $this->fields[$k] = addslashes($v[0][$e][0]);
+                     } else {
+                        $this->fields[$k] = "";
+                     }
                }
             }
          }
@@ -1793,8 +1782,7 @@ class User extends CommonDBTM {
             $buttons["user.form.php?new=1&amp;ext_auth=1"] = __('... From an external source');
          }
       }
-      if (Session::haveRight("user", self::IMPORTEXTAUTHUSERS)
-         && (static::canCreate() || static::canUpdate())) {
+      if (Session::haveRight("user", self::IMPORTEXTAUTHUSERS)) {
          if (AuthLdap::useAuthLdap()) {
             $buttons["ldap.php"] = __('LDAP directory link');
          }
@@ -2043,12 +2031,12 @@ class User extends CommonDBTM {
             echo "<tr class='tab_bg_1'>";
             echo "<td>" .  __('Default profile') . "</td><td>";
 
-            $options   = Dropdown::getDropdownArrayNames('glpi_profiles',
-                                                         Profile_User::getUserProfiles($this->fields['id']));
+            $options = array(0 => Dropdown::EMPTY_VALUE);
+            $options   += Dropdown::getDropdownArrayNames('glpi_profiles',
+                                                          Profile_User::getUserProfiles($this->fields['id']));
 
             Dropdown::showFromArray("profiles_id", $options,
-                                    array('value'               => $this->fields["profiles_id"],
-                                          'display_emptychoice' => true));
+                                    array('value' => $this->fields["profiles_id"]));
 
             echo "</td><td>" .  __('Default entity') . "</td><td>";
             $entities = Profile_User::getUserEntities($this->fields['id'],1);
@@ -2059,9 +2047,10 @@ class User extends CommonDBTM {
 
          echo "<tr class='tab_bg_1'>";
          echo "<td colspan='2' class='center'>" ;
-         if ($this->fields["last_login"]) {
-            printf(__('Last login on %s'), HTML::convDateTime($this->fields["last_login"]));
-         }
+         //TRANS: %s is the date
+         printf(__('Last update on %s'), HTML::convDateTime($this->fields["date_mod"]));
+         echo "<br>";
+         printf(__('Last login on %s'), HTML::convDateTime($this->fields["last_login"]));
          echo "</td><td colspan='2'class='center'>";
 
          if ($ID > 0) {
@@ -2281,11 +2270,11 @@ class User extends CommonDBTM {
          if (count($_SESSION['glpiprofiles']) >1) {
             echo "<td>" . __('Default profile') . "</td><td>";
 
-            $options = Dropdown::getDropdownArrayNames('glpi_profiles',
-                                                       Profile_User::getUserProfiles($this->fields['id']));
+            $options  = array(0 => Dropdown::EMPTY_VALUE);
+            $options += Dropdown::getDropdownArrayNames('glpi_profiles',
+                                                        Profile_User::getUserProfiles($this->fields['id']));
             Dropdown::showFromArray("profiles_id", $options,
-                                    array('value'               => $this->fields["profiles_id"],
-                                          'display_emptychoice' => true));
+                                    array('value' => $this->fields["profiles_id"]));
             echo "</td>";
 
          } else {
@@ -2667,12 +2656,6 @@ class User extends CommonDBTM {
       $tab[19]['datatype']             = 'datetime';
       $tab[19]['massiveaction']        = false;
 
-      $tab[121]['table']          = $this->getTable();
-      $tab[121]['field']          = 'date_creation';
-      $tab[121]['name']           = __('Creation date');
-      $tab[121]['datatype']       = 'datetime';
-      $tab[121]['massiveaction']  = false;
-
       $tab[20]['table']                = 'glpi_profiles';
       $tab[20]['field']                = 'name';
       $tab[20]['name']                 = sprintf(__('%1$s (%2$s)'), _n('Profile', 'Profiles', Session::getPluralNumber()),
@@ -2793,9 +2776,6 @@ class User extends CommonDBTM {
                                                                   'condition'
                                                                    => 'AND NEWTABLE.`type`
                                                                         = '.CommonITILActor::ASSIGN)));
-      // add objectlock search options
-      $tab += ObjectLock::getSearchOptionsToAdd( get_class($this) ) ;
-
       return $tab;
    }
 
@@ -2980,7 +2960,6 @@ class User extends CommonDBTM {
 
             break;
 
-
          case "all" :
             $where = " `glpi_users`.`id` > '0' ".
                      getEntitiesRestrictRequest("AND","glpi_profiles_users",'',$entity_restrict,1);
@@ -3052,9 +3031,9 @@ class User extends CommonDBTM {
 
                   case 'faq' :
                      $where[]= " (`glpi_profilerights`.`name` = 'knowbase'
-                                  AND (`glpi_profilerights`.`rights` & ".KnowbaseItem::READFAQ.") ".
-                                  getEntitiesRestrictRequest("AND", "glpi_profiles_users", '',
-                                                             $entity_restrict, 1).") ";
+                               AND (`glpi_profilerights`.`rights` & ".KnowbaseItem::READFAQ.") ".
+                               getEntitiesRestrictRequest("AND", "glpi_profiles_users", '',
+                                                          $entity_restrict, 1).") ";
 
                   default :
                      // Check read or active for rights
@@ -3137,9 +3116,7 @@ class User extends CommonDBTM {
                              OR `glpi_users`.`firstname` ".Search::makeTextSearch($search)."
                              OR `glpi_users`.`phone` ".Search::makeTextSearch($search)."
                              OR `glpi_useremails`.`email` ".Search::makeTextSearch($search)."
-                             OR CONCAT(`glpi_users`.`realname`,' ',
-                                       `glpi_users`.`firstname`,' ',
-                                       `glpi_users`.`firstname`) ".
+                             OR CONCAT(`glpi_users`.`realname`,' ',`glpi_users`.`firstname`) ".
                                        Search::makeTextSearch($search).")";
          }
          $query .= " WHERE $where ";
@@ -3166,35 +3143,32 @@ class User extends CommonDBTM {
     * Make a select box with all glpi users where select key = name
     *
     * @param $options array of possible options:
-    *    - name           : string / name of the select (default is users_id)
+    *    - name         : string / name of the select (default is users_id)
     *    - value
-    *    - right          : string / limit user who have specific right :
-    *                           id -> only current user (default case);
-    *                           interface -> central ;
-    *                           all -> all users ;
-    *                           specific right like Ticket::READALL, CREATE.... (is array passed one of all passed right is needed)
-    *    - comments       : boolean / is the comments displayed near the dropdown (default true)
-    *    - entity         : integer or array / restrict to a defined entity or array of entities
-    *                        (default -1 : no restriction)
-    *    - entity_sons    : boolean / if entity restrict specified auto select its sons
-    *                        only available if entity is a single value not an array(default false)
-    *    - all            : Nobody or All display for none selected
-    *                           all=0 (default) -> Nobody
-    *                           all=1 -> All
-    *                           all=-1-> nothing
-    *    - rand           : integer / already computed rand value
-    *    - toupdate       : array / Update a specific item on select change on dropdown
-    *                        (need value_fieldname, to_update, url
-    *                        (see Ajax::updateItemOnSelectEvent for information)
-    *                        and may have moreparams)
-    *    - used           : array / Already used items ID: not to display in dropdown (default empty)
+    *    - right        : string / limit user who have specific right :
+    *                         id -> only current user (default case);
+    *                         interface -> central ;
+    *                         all -> all users ;
+    *                         specific right like Ticket::READALL, CREATE.... (is array passed one of all passed right is needed)
+    *    - comments     : boolean / is the comments displayed near the dropdown (default true)
+    *    - entity       : integer or array / restrict to a defined entity or array of entities
+    *                      (default -1 : no restriction)
+    *    - entity_sons  : boolean / if entity restrict specified auto select its sons
+    *                      only available if entity is a single value not an array(default false)
+    *    - all          : Nobody or All display for none selected
+    *                         all=0 (default) -> Nobody
+    *                         all=1 -> All
+    *                         all=-1-> nothing
+    *    - rand         : integer / already computed rand value
+    *    - toupdate     : array / Update a specific item on select change on dropdown
+    *                      (need value_fieldname, to_update, url
+    *                      (see Ajax::updateItemOnSelectEvent for information)
+    *                      and may have moreparams)
+    *    - used         : array / Already used items ID: not to display in dropdown (default empty)
     *    - ldap_import
-    *    - on_change      : string / value to transmit to "onChange"
-    *    - display        : boolean / display or get string (default true)
-    *    - width          : specific width needed (default 80%)
-    *    - specific_tags  : array of HTML5 tags to add the the field
-    *    - url            : url of the ajax php code which should return the json data to show in
-    *                        the dropdown (default /ajax/getDropdownUsers.php)
+    *    - on_change    : string / value to transmit to "onChange"
+    *    - display      : boolean / display or get string (default true)
+    *    - width        : specific width needed (default 80%)
     *
     * @return rand value if displayed / string if not
    **/
@@ -3217,8 +3191,6 @@ class User extends CommonDBTM {
       $p['rand']           = mt_rand();
       $p['display']        = true;
       $p['_user_index']   = 0;
-      $p['specific_tags']  = array();
-      $p['url']            = $CFG_GLPI['root_doc']."/ajax/getDropdownUsers.php" ;
 
       if (is_array($options) && count($options)) {
          foreach ($options as $key => $val) {
@@ -3267,12 +3239,24 @@ class User extends CommonDBTM {
                         'right'               => $p['right'],
                         'on_change'           => $p['on_change'],
                         'used'                => $p['used'],
-                        'entity_restrict'     => $p['entity'],
-                        'specific_tags'       => $p['specific_tags']);
+                        'entity_restrict'     => $p['entity']);
 
       $output   = Html::jsAjaxDropdown($p['name'], $field_id,
-                                       $p['url'],
+                                       $CFG_GLPI['root_doc']."/ajax/getDropdownUsers.php",
                                        $param);
+
+      if ($p['name'] == '_itil_requester[users_id]') {
+        $params = array(
+           'fieldname'     => "locations_id",
+           'entities_id'   => $p['entity'],
+           'users_id'      => '__VALUE__',
+           'rand'          => $p['rand'],
+        );
+        Ajax::updateItemOnSelectEvent($field_id,
+                                      "dropdown_location",
+                                      '../plugins/escalade/ajax/dropdownLocation.php',
+                                      $params);
+      }
 
       // Display comment
       if ($p['comments']) {
@@ -3406,27 +3390,29 @@ class User extends CommonDBTM {
    **/
    function generateVcard() {
 
-      // prepare properties for the Vcard
+      include_once (GLPI_ROOT . "/lib/vcardclass/classes-vcard.php");
+
+      // build the Vcard
+      $vcard = new vCard();
+
       if (!empty($this->fields["realname"])
           || !empty($this->fields["firstname"])) {
-         $name = [$this->fields["realname"], $this->fields["firstname"], "", "", ""];
+         $vcard->setName($this->fields["realname"], $this->fields["firstname"], "", "");
       } else {
-         $name = [$this->fields["name"], "", "", "", ""];
+         $vcard->setName($this->fields["name"], "", "", "");
       }
 
-      // create vcard
-      $vcard = new VObject\Component\VCard([
-         'N'     => $name,
-         'EMAIL' => $this->getDefaultEmail(),
-         'NOTE'  => $this->fields["comment"],
-      ]);
-      $vcard->add('TEL', $this->fields["phone"], ['type' => 'PREF;WORK;VOICE']);
-      $vcard->add('TEL', $this->fields["phone2"], ['type' => 'HOME;VOICE']);
-      $vcard->add('TEL', $this->fields["mobile"], ['type' => 'WORK;CELL']);
+      $vcard->setPhoneNumber($this->fields["phone"], "PREF;WORK;VOICE");
+      $vcard->setPhoneNumber($this->fields["phone2"], "HOME;VOICE");
+      $vcard->setPhoneNumber($this->fields["mobile"], "WORK;CELL");
+
+      $vcard->setEmail($this->getDefaultEmail());
+
+      $vcard->setNote($this->fields["comment"]);
 
       // send the  VCard
-      $output   = $vcard->serialize();
-      $filename = implode("_", array_filter($name)).".vcf";
+      $output   = $vcard->getVCard();
+      $filename = $vcard->getFileName();      // "xxx xxx.vcf"
 
       @Header("Content-Disposition: attachment; filename=\"$filename\"");
       @Header("Content-Length: ".Toolbox::strlen($output));
@@ -3657,7 +3643,7 @@ class User extends CommonDBTM {
       $query = "SELECT `users_id` as id
                 FROM `glpi_useremails`
                 LEFT JOIN `glpi_users` ON (`glpi_users`.`id` = `glpi_useremails`.`users_id`)
-                WHERE `glpi_useremails`.`email` = '".$DB->escape(stripslashes($email))."'
+                WHERE `glpi_useremails`.`email` = '".stripslashes($email)."'
                 ORDER BY `glpi_users`.`is_active`  DESC, is_deleted ASC";
       $result = $DB->query($query);
 
@@ -3693,13 +3679,6 @@ class User extends CommonDBTM {
    **/
    static function manageDeletedUserInLdap($users_id) {
       global $CFG_GLPI;
-
-      //The only case where users_id can be null if when a user has been imported into GLPi
-      //it's dn still exists, but doesn't match the connection filter anymore
-      //In this case, do not try to process the user
-      if (!$users_id) {
-         return true;
-      }
 
       //User is present in DB but not in the directory : it's been deleted in LDAP
       $tmp['id']              = $users_id;
@@ -4215,56 +4194,5 @@ class User extends CommonDBTM {
 
       return $values;
    }
-
-
-   /**
-    * Retrieve the list of LDAP field names from a list of fields
-    * allow pattern substitution, e.g. %{name}
-    *
-    * @since 9.1
-    *
-    * @param $map array of fields
-    *
-    * @return Array of Ldap field names
-   **/
-   private static function getLdapFieldNames(Array $map) {
-
-      $ret = array ();
-      foreach ($map as $k => $v) {
-         if (preg_match_all('/%{(.*)}/U', $v, $reg)) {
-            // e.g. "%{country} > %{city} > %{site}"
-            foreach ($reg [1] as $f) {
-               $ret [] = $f;
-            }
-         } else {
-            // single field name
-            $ret [] = $v;
-         }
-      }
-      return $ret;
-   }
-
-
-   /**
-    * Retrieve the value of a fields from a LDAP result
-    * applying needed substitution of %{value}
-    *
-    * @since 9.1
-    *
-    * @param $map String with field format
-    * @param $res LDAP result
-    *
-   **/
-   private static function getLdapFieldValue($map, array $res) {
-
-      $map = Toolbox::unclean_cross_side_scripting_deep($map);
-      $ret = preg_replace_callback('/%{(.*)}/U',
-                                  function ($matches) use ($res) {
-                                     return (isset($res[0][$matches[1]][0]) ? $res[0][$matches[1]][0] : '');
-                                  }, $map );
-
-      return addslashes($ret == $map ? (isset($res[0][$map][0]) ? $res[0][$map][0] : '') : $ret);
-   }
-
-
 }
+?>
