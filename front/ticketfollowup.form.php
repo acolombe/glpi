@@ -82,6 +82,7 @@ if (isset($_POST["add"])) {
 
 } else if (isset($_POST["purge"])) {
    $fup->check($_POST['id'], PURGE);
+   $_POST['notify_control'] = FollowupNotify::setNotifyControl();
    $fup->delete($_POST, 1);
 
    Event::log($fup->getField('tickets_id'), "ticket", 4, "tracking",
