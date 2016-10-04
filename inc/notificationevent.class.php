@@ -153,42 +153,22 @@ class NotificationEvent extends CommonDBTM {
             // Get notifying control config submitted by new follower
             $notify_control = FollowupNotify::getNotifyControl($_POST['notify_control']);
 
-            // Define actors types variables && actors notification booleans
-            $actor_assign           = CommonITILActor::ASSIGN;
-            $actor_requester        = CommonITILActor::REQUESTER;
-            $actor_observer         = CommonITILActor::OBSERVER;
-            $group_assign           = Notification::ASSIGN_GROUP;
-            $group_requester        = Notification::REQUESTER_GROUP;
-            $group_observer         = Notification::OBSERVER_GROUP;
-            $notify_user_assign     = $notify_control->_users_id_assign;
-            $notify_supplier_assign = $notify_control->_suppliers_id_assign;
-            $notify_group_assign    = $notify_control->_groups_id_assign;
-            $notify_user_requester  = $notify_control->_users_id_requester;
-            $notify_group_requester = $notify_control->_groups_id_requester;
-            $notify_user_observer   = $notify_control->_users_id_observer;
-            $notify_group_observer  = $notify_control->_groups_id_observer;
-
             // Foreach notification targets
             foreach ($targets as $target) {
 
-              // If this target and all of its users are blocked, break loop
-              // Can't use "switch" because "break" will end "switch" not "foreach"...
-              if ($target['items_id'] == $group_assign &&
-                  $notify_group_assign == 0 &&
-                  $notify_user_assign == 0) {
-                break;
-              }
-              else if ($target['items_id'] == $group_requester &&
-                        $notify_group_requester  == 0 &&
-                        $notify_user_requester == 0) {
-                break;
-              }
-              else if ($target['items_id'] == $group_observer &&
-                        $notify_group_observer == 0 &&
-                        $notify_user_observer == 0) {
-                break;
+              // If this target is a group and this group is disabled, skip target
+              if ($target['items_id'] == Notification::ASSIGN_GROUP     &&
+                  $notify_control->_groups_id_assign     == 0               ||
+                  $target['items_id'] == Notification::REQUESTER_GROUP  &&
+                  $notify_control->_groups_id_requester  == 0               ||
+                  $target['items_id'] == Notification::OBSERVER_GROUP   &&
+                  $notify_control->_groups_id_observer   == 0               ||
+                  $target['items_id'] == Notification::SUPPLIER         &&
+                  $notify_control->_suppliers_id_assign  == 0) {
+                continue;
               }
 
+              // Else....
               // Get all users affected by this notification
               $notificationtarget->getAddressesByTarget($target,$options);
 
@@ -210,28 +190,12 @@ class NotificationEvent extends CommonDBTM {
 
                   // If current actor or his group isn't blocked, keep $unset at "false"
                   // Else, switch $unset to "true"
-                  switch ($actor['type']) {
-                    case $actor_assign &&
-                          $notify_user_assign == 0 &&
-                          $notify_group_assign == 0:
-                      $unset = 1;
-                      break;
-                    case $actor_assign &&
-                          $notify_supplier_assign == 0 &&
-                          $notify_group_assign == 0:
-                      $unset = 1;
-                      break;
-                    case $actor_requester &&
-                          $notify_user_requester == 0 &&
-                          $notify_group_requester == 0:
-                      $unset = 1;
-                      break;
-                    case $actor_observer &&
-                          $notify_user_observer == 0 &&
-                          $notify_group_observer == 0:
-                      $unset = 1;
-                      break;
-                  }
+                  if      ($actor['type'] == CommonITILActor::ASSIGN    &&
+                           $notify_control->_users_id_assign    == 0) { $unset = 1; }
+                  else if ($actor['type'] == CommonITILActor::REQUESTER &&
+                           $notify_control->_users_id_requester == 0) { $unset = 1; }
+                  else if ($actor['type'] == CommonITILActor::OBSERVER  &&
+                           $notify_control->_users_id_observer  == 0) { $unset = 1; }
 
                   // If unset was validated, remove mail from mailing list
                   if ($unset) {
