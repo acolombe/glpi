@@ -47,10 +47,8 @@ if (isset($_POST["add"])) {
    Event::log($fup->getField('tickets_id'), "ticket", 4, "tracking",
               //TRANS: %s is the user login
               sprintf(__('%s adds a followup'), $_SESSION["glpiname"]));
-// ************************************************************************************************
    $_POST['notify_control'] = FollowupNotify::setNotifyControl();
    $fup->add($_POST);
-// ************************************************************************************************
 
    Html::back();
 
@@ -68,10 +66,7 @@ if (isset($_POST["add"])) {
 
 } else if (isset($_POST["update"])) {
 
-// ************************************************************************************************
    $_POST['notify_control'] = FollowupNotify::setNotifyControl();
-// ************************************************************************************************
-
    $fup->check($_POST['id'], UPDATE);
    $fup->update($_POST);
 
