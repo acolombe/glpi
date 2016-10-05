@@ -149,65 +149,53 @@ class NotificationEvent extends CommonDBTM {
                $notify_me = $_SESSION['glpinotification_to_myself'];
             }
 
-// ************************************************************************************************
-            // Get notifying control config submitted by new follower
             $notify_control = FollowupNotify::getNotifyControl($_POST['notify_control']);
 
-            // Foreach notification targets
             foreach ($targets as $target) {
 
+              $id = $target['items_id'];
+              $ag = Notification::ASSIGN_GROUP;
+              $rg = Notification::REQUESTER_GROUP;
+              $og = Notification::OBSERVER_GROUP;
+              $su = Notification::SUPPLIER;
+
               // If this target is a group and this group is disabled, skip target
-              if ($target['items_id'] == Notification::ASSIGN_GROUP     &&
-                  $notify_control->_groups_id_assign     == 0               ||
-                  $target['items_id'] == Notification::REQUESTER_GROUP  &&
-                  $notify_control->_groups_id_requester  == 0               ||
-                  $target['items_id'] == Notification::OBSERVER_GROUP   &&
-                  $notify_control->_groups_id_observer   == 0               ||
-                  $target['items_id'] == Notification::SUPPLIER         &&
-                  $notify_control->_suppliers_id_assign  == 0) {
+              if ($id == $ag && $notify_control->_groups_id_assign    == 0 ||
+                  $id == $rg && $notify_control->_groups_id_requester == 0 ||
+                  $id == $og && $notify_control->_groups_id_observer  == 0 ||
+                  $id == $su && $notify_control->_suppliers_id_assign == 0) {
                 continue;
               }
 
-              // Else....
-              // Get all users affected by this notification
               $notificationtarget->getAddressesByTarget($target,$options);
 
-              // Get mailing list
               $mails = $notificationtarget->getTargets();
 
-              // Get ticket's roles list
               $tickets_users = new Ticket_User();
               $roles = $tickets_users->getActors($item->getID());
 
-              // Foreach roles ...
               foreach ($roles as $role) {
-
-                // ... get role's actors with its informations
                 foreach ($role as $actor) {
-
                   // Default : keep mail in mailing list
-                  $unset = 0;
+                  $unset  = 0;
+                  $type   = $actor['type'];
+                  $ua     = CommonITILActor::ASSIGN;
+                  $ur     = CommonITILActor::REQUESTER;
+                  $uo     = CommonITILActor::OBSERVER;
 
-                  // If current actor or his group isn't blocked, keep $unset at "false"
-                  // Else, switch $unset to "true"
-                  if      ($actor['type'] == CommonITILActor::ASSIGN    &&
-                           $notify_control->_users_id_assign    == 0) { $unset = 1; }
-                  else if ($actor['type'] == CommonITILActor::REQUESTER &&
-                           $notify_control->_users_id_requester == 0) { $unset = 1; }
-                  else if ($actor['type'] == CommonITILActor::OBSERVER  &&
-                           $notify_control->_users_id_observer  == 0) { $unset = 1; }
-
-                  // If unset was validated, remove mail from mailing list
-                  if ($unset) {
-                    $mail_to_remove = UserEmail::getDefaultForUser($actor['users_id']);
-                    unset($mails[$mail_to_remove]);
+                  // If current actor is blocked, switch $unset to "true"
+                  if ($type == $ua && $notify_control->_users_id_assign     == 0 ||
+                      $type == $ur && $notify_control->_users_id_requester  == 0 ||
+                      $type == $uo && $notify_control->_users_id_observer   == 0) {
+                    $unset = 1;
                   }
 
-                }
+                  // If unset was validated, remove mail from mailing list
+                  if ($unset) { unset($mails[UserEmail::getDefaultForUser($actor['users_id'])]); }
 
+                }
               }
-// ************************************************************************************************
-              // REPLACED $notificationtarget->getTargets() BY $mails
+             
                foreach ($mails as $user_email => $users_infos) {
 
                   if ($label
