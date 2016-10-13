@@ -170,7 +170,7 @@ class NotificationEvent extends CommonDBTM {
               $notificationtarget->getAddressesByTarget($target,$options);
 
               $mails = $notificationtarget->getTargets();
-              $to_notify = array();
+              $mails_backup = $mails;
 
               $tickets_users = new Ticket_User();
               $roles = $tickets_users->getActors($item->getID());
@@ -184,12 +184,20 @@ class NotificationEvent extends CommonDBTM {
                   $uo     = CommonITILActor::OBSERVER;
                   $actor_email = trim(Toolbox::strtolower(UserEmail::getDefaultForUser($actor['users_id'])));
 
-                  // If current actor is enabled and it exists in mails array, add it to notify array
-                  if (($type == $ua && $notify_control->_users_id_assign     == 1 ||
-                       $type == $ur && $notify_control->_users_id_requester  == 1 ||
-                       $type == $uo && $notify_control->_users_id_observer   == 1) &&
-                       isset($mails[$actor_email])) {
-                    $to_notify[$actor_email] = $mails[$actor_email];
+                  // If current actor is blocked, switch $unset to "true"
+                  if ($type == $ua && $notify_control->_users_id_assign     == 0 ||
+                      $type == $ur && $notify_control->_users_id_requester  == 0 ||
+                      $type == $uo && $notify_control->_users_id_observer   == 0) {
+                     unset($mails[$actor_email]);
+                  }
+
+                  // If a user assumes two roles, recover its mail address if enabled
+                  if ($type == $ua && $notify_control->_users_id_assign     == 1 ||
+                      $type == $ur && $notify_control->_users_id_requester  == 1 ||
+                      $type == $uo && $notify_control->_users_id_observer   == 1) {
+                    if (isset($mails_backup[$actor_email])) {
+                      $mails[$actor_email] = $mails_backup[$actor_email];
+                    }
                   }
 
                 }
