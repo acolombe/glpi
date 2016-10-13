@@ -170,33 +170,32 @@ class NotificationEvent extends CommonDBTM {
               $notificationtarget->getAddressesByTarget($target,$options);
 
               $mails = $notificationtarget->getTargets();
+              $to_notify = array();
 
               $tickets_users = new Ticket_User();
               $roles = $tickets_users->getActors($item->getID());
 
               foreach ($roles as $role) {
                 foreach ($role as $actor) {
-                  // Default : keep mail in mailing list
-                  $unset  = 0;
+                 
                   $type   = $actor['type'];
                   $ua     = CommonITILActor::ASSIGN;
                   $ur     = CommonITILActor::REQUESTER;
                   $uo     = CommonITILActor::OBSERVER;
+                  $actor_email = trim(Toolbox::strtolower(UserEmail::getDefaultForUser($actor['users_id'])));
 
-                  // If current actor is blocked, switch $unset to "true"
-                  if ($type == $ua && $notify_control->_users_id_assign     == 0 ||
-                      $type == $ur && $notify_control->_users_id_requester  == 0 ||
-                      $type == $uo && $notify_control->_users_id_observer   == 0) {
-                    $unset = 1;
+                  // If current actor is enabled and it exists in mails array, add it to notify array
+                  if (($type == $ua && $notify_control->_users_id_assign     == 1 ||
+                       $type == $ur && $notify_control->_users_id_requester  == 1 ||
+                       $type == $uo && $notify_control->_users_id_observer   == 1) &&
+                       isset($mails[$actor_email])) {
+                    $to_notify[$actor_email] = $mails[$actor_email];
                   }
-
-                  // If unset was validated, remove mail from mailing list
-                  if ($unset) { unset($mails[UserEmail::getDefaultForUser($actor['users_id'])]); }
 
                 }
               }
              
-               foreach ($mails as $user_email => $users_infos) {
+               foreach ($to_notify as $user_email => $users_infos) {
 
                   if ($label
                       || $notificationtarget->validateSendTo($event, $users_infos, $notify_me)) {
