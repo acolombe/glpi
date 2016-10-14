@@ -171,6 +171,7 @@ class NotificationEvent extends CommonDBTM {
 
               $mails = $notificationtarget->getTargets();
               $mails_backup = $mails;
+              $restore = array();
 
               $tickets_users = new Ticket_User();
               $roles = $tickets_users->getActors($item->getID());
@@ -196,14 +197,16 @@ class NotificationEvent extends CommonDBTM {
                       $type == $ur && $notify_control->_users_id_requester  == 1 ||
                       $type == $uo && $notify_control->_users_id_observer   == 1) {
                     if (isset($mails_backup[$actor_email])) {
-                      $mails[$actor_email] = $mails_backup[$actor_email];
+                      $restore[$actor_email] = $mails_backup[$actor_email];
                     }
                   }
 
                 }
               }
              
-               foreach ($to_notify as $user_email => $users_infos) {
+              $mails = array_merge($mails, $restore);
+             
+               foreach ($mails as $user_email => $users_infos) {
 
                   if ($label
                       || $notificationtarget->validateSendTo($event, $users_infos, $notify_me)) {
