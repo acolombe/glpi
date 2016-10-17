@@ -291,7 +291,15 @@ class Log extends CommonDBTM {
       $header .= "<th>"._x('name', 'Update')."</th></tr>";
       echo $header;
 
-      foreach (self::getHistoryData($item,$start, $_SESSION['glpilist_limit']) as $data) {
+      if ($_GET['_glpi_tab'] == 'LogSimple$1') {
+        // Filter : select only state changes ("state" field's ID = 31)
+        $filter = 'id_search_option = 31';
+      }
+      else {
+        $filter = NULL;
+      }
+
+      foreach (self::getHistoryData($item,$start, $_SESSION['glpilist_limit'], $filter) as $data) {
          if ($data['display_history']) {
             // show line
             echo "<tr class='tab_bg_2'>";
