@@ -115,6 +115,8 @@ class Report extends CommonGLPI{
          $report_list["state"]["name"] = _n('Status', 'Statuses', Session::getPluralNumber());
          $report_list["state"]["file"] = "report.state.php";
       }
+      $report_list["park_situation"]["name"] = __('Park Situation');
+      $report_list["park_situation"]["file"] = "report.park_situation.php";
       //Affichage du tableau de presentation des stats
       echo "<table class='tab_cadre_fixe'>";
       echo "<tr><th colspan='2'>".__('Select the report you want to generate')."</th></tr>";
