@@ -16629,3 +16629,6 @@ msgstr "La connexion à la base de données a échouée, vérifiez les paramètr
 
 msgid "Simplified Logs"
 msgstr "Historique simplifié"
+
+msgid "Park Situation"
+msgstr "Situation du parc"
